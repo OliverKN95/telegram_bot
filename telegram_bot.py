@@ -227,6 +227,9 @@ if __name__ == "__main__":
     # Para testing local, descomenta la siguiente línea:
     # report()
 
+    print("Ejecutando reporte al iniciar servicio en web server")
+    report()
+
     # Iniciar el scheduler en un hilo separado
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
