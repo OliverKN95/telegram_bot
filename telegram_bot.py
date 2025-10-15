@@ -439,6 +439,6 @@ if __name__ == "__main__":
     # Para testing local, descomenta la siguiente línea:
     # report()
     
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     print(f"Iniciando servidor FastAPI en puerto {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

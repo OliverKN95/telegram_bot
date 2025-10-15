@@ -34,7 +34,7 @@ RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
 USER appuser
 
 # Variables de entorno por defecto (pueden ser sobrescritas en runtime)
-ENV PORT=8000
+ENV PORT=8080
 ENV TIMEZONE=America/Merida
 ENV BASE_URL=https://www.yucatan.gob.mx
 ENV DIARIO_URL_PATH=/gobierno/diario_oficial.php
@@ -45,7 +45,7 @@ ENV SCHEDULE_HOUR_2=12
 ENV SCHEDULE_MINUTE_2=0
 
 # Exponer el puerto para el endpoint de salud
-EXPOSE 8000
+EXPOSE 8080
 
 # Comando por defecto para ejecutar la aplicación
 CMD ["./start.sh"]
