@@ -189,7 +189,7 @@ def diario_scraping():
             if pdf_result["found"]:
                 timezone_name = os.getenv("TIMEZONE", "America/Merida").split("/")[-1]
                 format_result = (
-                    f"{fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - PDF procesado: {filename} - Total páginas: {total_pages} - '{search_text}' encontrado en páginas: {found_pages}"
+                    f"✅ {fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - PDF procesado: {filename} - Total páginas: {total_pages} - '{search_text}' encontrado en páginas: {found_pages}"
                     + " - "
                     + message
                 )
@@ -197,17 +197,17 @@ def diario_scraping():
             else:
                 timezone_name = os.getenv("TIMEZONE", "America/Merida").split("/")[-1]
                 format_result = (
-                    f"{fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - PDF procesado: {filename} - Total páginas: {total_pages} - '{search_text}' NO encontrado"
+                    f"❌ {fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - PDF procesado: {filename} - Total páginas: {total_pages} - '{search_text}' NO encontrado"
                     + " - "
                     + message
                 )
         else:
             timezone_name = os.getenv("TIMEZONE", "America/Merida").split("/")[-1]
-            format_result = f"{fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - Error procesando PDF"
+            format_result = f"‼️ {fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - Error procesando PDF"
     else:
         print("No se encontró enlace de PDF con clase 'pdf'")
         timezone_name = os.getenv("TIMEZONE", "America/Merida").split("/")[-1]
-        format_result = f"{fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - No PDF encontrado"
+        format_result = f"⚠️ {fecha_consulta_pagina} - Hora de ejecución ({timezone_name}): {date_now} - No PDF encontrado"
 
     return format_result, None  # Devolver None cuando no hay PDF para enviar
 
