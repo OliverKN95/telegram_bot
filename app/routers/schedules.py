@@ -2,13 +2,21 @@ import logging
 import os
 from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBasicCredentials
 
 from app.crud import schedules as schedule_crud
 from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
-from app.utils.auth import auth_required
+from app.utils.auth import (
+    SESSION_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+    auth_required,
+    create_session_token,
+    verify_basic_auth,
+)
 
 try:
     from telegram_bot import report as legacy_report
@@ -19,11 +27,84 @@ router = APIRouter()
 logger = logging.getLogger("telegram_bot.routes")
 
 
+def render_login(error: bool = False) -> HTMLResponse:
+    error_message = '<p class="error">Usuario o contraseña incorrectos.</p>' if error else ""
+    return HTMLResponse(
+        f"""<!doctype html>
+        <html lang="es">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Iniciar sesión</title>
+            <style>
+                * {{ box-sizing: border-box; }}
+                body {{ min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; font-family: Arial, sans-serif; color: #172033; background: linear-gradient(135deg, #eff6ff, #f8fafc 55%, #e0e7ff); }}
+                main {{ width: min(100%, 420px); padding: 36px; border: 1px solid #e2e8f0; border-radius: 20px; background: white; box-shadow: 0 24px 70px #0f172a1a; }}
+                h1 {{ margin: 0 0 8px; font-size: 26px; }}
+                p {{ color: #64748b; line-height: 1.5; }}
+                form {{ display: grid; gap: 14px; margin-top: 24px; }}
+                label {{ display: grid; gap: 7px; color: #334155; font-size: 14px; font-weight: 600; }}
+                input, button {{ width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; }}
+                input:focus {{ outline: 3px solid #bfdbfe; border-color: #3b82f6; }}
+                button {{ border: 0; color: white; background: #2563eb; font-weight: 700; cursor: pointer; }}
+                button:hover {{ background: #1d4ed8; }}
+                .error {{ margin: 0; padding: 10px 12px; border-radius: 8px; color: #b91c1c; background: #fef2f2; }}
+            </style>
+        </head>
+        <body><main>
+            <h1>Iniciar sesión</h1>
+            <p>Ingresa tus credenciales de administrador para abrir el panel.</p>
+            {error_message}
+            <form method="post" action="/login">
+                <label>Usuario<input name="username" autocomplete="username" required autofocus></label>
+                <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
+                <button type="submit">Entrar al panel</button>
+            </form>
+        </main></body></html>""",
+        status_code=401 if error else 200,
+    )
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
+    try:
+        auth_required(request)
+        return RedirectResponse("/", status_code=303)
+    except HTTPException:
+        return render_login()
+
+
+@router.post("/login", response_class=HTMLResponse)
+async def login(request: Request) -> HTMLResponse | RedirectResponse:
+    if os.getenv("ENABLE_AUTH", "true").lower() != "true":
+        return RedirectResponse("/", status_code=303)
+    form = parse_qs((await request.body()).decode("utf-8"))
+    username = form.get("username", [""])[0]
+    password = form.get("password", [""])[0]
+    if not verify_basic_auth(HTTPBasicCredentials(username=username, password=password)):
+        return render_login(error=True)
+
+    response = RedirectResponse("/", status_code=303)
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        create_session_token(username),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=forwarded_proto == "https",
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
 @router.get("/", response_class=HTMLResponse)
-async def root(request: Request) -> HTMLResponse:
+async def root(request: Request) -> HTMLResponse | RedirectResponse:
+    try:
+        auth_required(request)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=303)
     count = len(schedule_crud.list_schedules())
-    auth_user = os.getenv("ADMIN_USER", "admin")
-    auth_password = os.getenv("ADMIN_PASSWORD", "admin123")
     return HTMLResponse(
         f"""
         <!DOCTYPE html>
@@ -123,19 +204,8 @@ async def root(request: Request) -> HTMLResponse:
                 const importFile = document.getElementById('import-file');
                 const sendToTelegramToggle = document.getElementById('send-to-telegram-toggle');
                 const formSendToTelegramToggle = document.getElementById('form-send-to-telegram-toggle');
-                const authUser = {auth_user!r};
-                const authPassword = {auth_password!r};
-
-                function getAuthHeaders(extraHeaders = {{}}) {{
-                    const headers = {{ ...extraHeaders }};
-                    if (authUser && authPassword) {{
-                        headers.Authorization = 'Basic ' + btoa(authUser + ':' + authPassword);
-                    }}
-                    return headers;
-                }}
-
                 async function fetchJson(url, options = {{}}) {{
-                    const response = await fetch(url, {{ ...options, headers: getAuthHeaders(options.headers || {{}}) }});
+                    const response = await fetch(url, options);
                     if (!response.ok) {{
                         throw new Error(`Error ${{response.status}}: ${{response.statusText}}`);
                     }}

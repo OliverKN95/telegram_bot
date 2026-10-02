@@ -42,6 +42,35 @@ def test_ui_endpoints_load_without_auth_headers(client):
     assert any(item["id"] == schedule_id for item in payload)
 
 
+def test_login_redirects_to_panel_and_session_authenticates_api(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+    response = client.post(
+        "/login",
+        data={"username": "admin", "password": "admin123"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert "httponly" in response.headers["set-cookie"].lower()
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Panel de corridas" in response.text
+    assert client.get("/api/schedules").status_code == 200
+
+
+def test_login_rejects_invalid_credentials(client):
+    response = client.post(
+        "/login",
+        data={"username": "admin", "password": "incorrecta"},
+    )
+    assert response.status_code == 401
+    assert "Usuario o contraseña incorrectos" in response.text
+
+
 def test_history_endpoint_returns_saved_run_logs(client):
     schedule_crud.create_schedule(name="Historial", hour=9, minute=15, enabled=True)
     schedule_crud.log_run(schedule_id=1, schedule_name="Historial", success=True, message="ok")

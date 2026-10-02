@@ -11,6 +11,14 @@ Este proyecto utiliza archivos `.env` para manejar la configuración. A continua
 ### Configuración del Servidor
 - `PORT`: Puerto en el que se ejecutará el servidor de salud (default: 8000)
 
+### Acceso al panel web
+- `ENABLE_AUTH`: Activa la autenticación del panel y la API (default: `true`)
+- `ADMIN_USER`: Usuario administrador (default: `admin`)
+- `ADMIN_PASSWORD`: Contraseña del administrador (default: `admin123`; cámbiala antes de desplegar)
+- `AUTH_SESSION_SECRET`: Clave secreta para firmar las sesiones del navegador. Si no se define, se usa `ADMIN_PASSWORD`.
+
+Al abrir `/`, el panel redirige a la pantalla de inicio de sesión. Tras validar las credenciales se crea una sesión segura por 12 horas.
+
 ### Configuración de Búsqueda
 - `SEARCH_TEXT`: Texto a buscar en los PDFs (default: "koyoc novelo")
 - `SEND_PDF_WHEN_FOUND`: Si debe enviar el PDF automáticamente cuando se encuentra el texto (default: true)

@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -8,7 +10,7 @@ import time
 from datetime import datetime
 from io import BytesIO
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin
 
 import pytz
 import requests
@@ -16,7 +18,7 @@ import uvicorn
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pypdf import PdfReader
 
@@ -34,6 +36,8 @@ app = FastAPI(
 )
 
 security = HTTPBasic()
+SESSION_COOKIE_NAME = "admin_session"
+SESSION_TTL_SECONDS = 12 * 60 * 60
 
 
 def verify_basic_auth(credentials: HTTPBasicCredentials) -> bool:
@@ -43,6 +47,27 @@ def verify_basic_auth(credentials: HTTPBasicCredentials) -> bool:
         credentials.username == expected_user
         and credentials.password == expected_password
     )
+
+
+def create_session_token(username: str) -> str:
+    expires_at = int(time.time()) + SESSION_TTL_SECONDS
+    payload = f"{username}:{expires_at}"
+    secret = os.getenv("AUTH_SESSION_SECRET", os.getenv("ADMIN_PASSWORD", "admin123"))
+    signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}:{signature}"
+
+
+def verify_session_token(token: str) -> bool:
+    try:
+        username, expires_at, signature = token.split(":", 2)
+        if username != os.getenv("ADMIN_USER", "admin") or int(expires_at) < int(time.time()):
+            return False
+        payload = f"{username}:{expires_at}"
+        secret = os.getenv("AUTH_SESSION_SECRET", os.getenv("ADMIN_PASSWORD", "admin123"))
+        expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
+    except (ValueError, TypeError):
+        return False
 
 
 def get_db_path() -> str:
@@ -425,6 +450,9 @@ async def health_check() -> dict[str, str]:
 def auth_required(request: Request) -> None:
     if os.getenv("ENABLE_AUTH", "true").lower() != "true":
         return
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_token and verify_session_token(session_token):
+        return
     auth_header = request.headers.get("authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Autenticación requerida")
@@ -440,9 +468,77 @@ def auth_required(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Credenciales inválidas") from exc
 
 
+def render_login(error: bool = False) -> HTMLResponse:
+    error_message = '<p class="error">Usuario o contraseña incorrectos.</p>' if error else ""
+    return HTMLResponse(
+        f"""<!doctype html>
+        <html lang="es"><head>
+            <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Iniciar sesión</title>
+            <style>
+                * {{ box-sizing: border-box; }}
+                body {{ min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; font-family: Arial, sans-serif; color: #172033; background: linear-gradient(135deg, #eff6ff, #f8fafc 55%, #e0e7ff); }}
+                main {{ width: min(100%, 420px); padding: 36px; border: 1px solid #e2e8f0; border-radius: 20px; background: white; box-shadow: 0 24px 70px #0f172a1a; }}
+                h1 {{ margin: 0 0 8px; font-size: 26px; }} p {{ color: #64748b; line-height: 1.5; }}
+                form {{ display: grid; gap: 14px; margin-top: 24px; }}
+                label {{ display: grid; gap: 7px; color: #334155; font-size: 14px; font-weight: 600; }}
+                input, button {{ width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; }}
+                input:focus {{ outline: 3px solid #bfdbfe; border-color: #3b82f6; }}
+                button {{ border: 0; color: white; background: #2563eb; font-weight: 700; cursor: pointer; }}
+                button:hover {{ background: #1d4ed8; }} .error {{ margin: 0; padding: 10px 12px; border-radius: 8px; color: #b91c1c; background: #fef2f2; }}
+            </style>
+        </head><body><main>
+            <h1>Iniciar sesión</h1><p>Ingresa tus credenciales de administrador para abrir el panel.</p>
+            {error_message}
+            <form method="post" action="/login">
+                <label>Usuario<input name="username" autocomplete="username" required autofocus></label>
+                <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
+                <button type="submit">Entrar al panel</button>
+            </form>
+        </main></body></html>""",
+        status_code=401 if error else 200,
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
+    try:
+        auth_required(request)
+        return RedirectResponse("/", status_code=303)
+    except HTTPException:
+        return render_login()
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(request: Request) -> HTMLResponse | RedirectResponse:
+    if os.getenv("ENABLE_AUTH", "true").lower() != "true":
+        return RedirectResponse("/", status_code=303)
+    form = parse_qs((await request.body()).decode("utf-8"))
+    username = form.get("username", [""])[0]
+    password = form.get("password", [""])[0]
+    if not verify_basic_auth(HTTPBasicCredentials(username=username, password=password)):
+        return render_login(error=True)
+
+    response = RedirectResponse("/", status_code=303)
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        create_session_token(username),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=forwarded_proto == "https",
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request) -> HTMLResponse:
-    auth_required(request)
+async def root(request: Request) -> HTMLResponse | RedirectResponse:
+    try:
+        auth_required(request)
+    except HTTPException:
+        return RedirectResponse("/login", status_code=303)
     count = len(list_schedules())
     return HTMLResponse(
         f"""
