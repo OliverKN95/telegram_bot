@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasicCredentials
 
 from app.crud import schedules as schedule_crud
@@ -66,7 +66,7 @@ def render_login(error: bool = False) -> HTMLResponse:
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
+async def login_page(request: Request) -> Response:
     try:
         auth_required(request)
         return RedirectResponse("/", status_code=303)
@@ -75,7 +75,7 @@ async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
 
 
 @router.post("/login", response_class=HTMLResponse)
-async def login(request: Request) -> HTMLResponse | RedirectResponse:
+async def login(request: Request) -> Response:
     if os.getenv("ENABLE_AUTH", "true").lower() != "true":
         return RedirectResponse("/", status_code=303)
     form = parse_qs((await request.body()).decode("utf-8"))
@@ -99,7 +99,7 @@ async def login(request: Request) -> HTMLResponse | RedirectResponse:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def root(request: Request) -> HTMLResponse | RedirectResponse:
+async def root(request: Request) -> Response:
     try:
         auth_required(request)
     except HTTPException:

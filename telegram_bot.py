@@ -18,7 +18,7 @@ import uvicorn
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pypdf import PdfReader
 
@@ -501,7 +501,7 @@ def render_login(error: bool = False) -> HTMLResponse:
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
+async def login_page(request: Request) -> Response:
     try:
         auth_required(request)
         return RedirectResponse("/", status_code=303)
@@ -510,7 +510,7 @@ async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def login(request: Request) -> HTMLResponse | RedirectResponse:
+async def login(request: Request) -> Response:
     if os.getenv("ENABLE_AUTH", "true").lower() != "true":
         return RedirectResponse("/", status_code=303)
     form = parse_qs((await request.body()).decode("utf-8"))
@@ -534,7 +534,7 @@ async def login(request: Request) -> HTMLResponse | RedirectResponse:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request) -> HTMLResponse | RedirectResponse:
+async def root(request: Request) -> Response:
     try:
         auth_required(request)
     except HTTPException:
